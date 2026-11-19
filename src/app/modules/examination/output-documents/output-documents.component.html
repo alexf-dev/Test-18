@@ -1,0 +1,137 @@
+<div class="flex flex-column md:flex-row align-items-start gap-3" [attr.aria-busy]="loading || busy">
+  <nav *ngIf="showSidebar" class="w-full md:w-16rem flex-shrink-0 surface-50 border-round-xl p-2" aria-label="Разделы выходных документов">
+    <button *ngFor="let item of sections" pButton type="button"
+            class="p-button-text w-full text-left justify-content-start border-none border-round text-sm line-height-2 p-2"
+            [ngClass]="section===item.id ? 'surface-200 text-color font-bold' : 'text-color font-normal'"
+            [attr.aria-current]="section===item.id ? 'page' : null" (click)="changeSection(item.id)">{{item.label}}</button>
+  </nav>
+
+  <section class="section-card flex-1 w-full min-w-0" aria-label="Документы и извещения">
+    <div *ngIf="error" class="flex flex-wrap align-items-center gap-2 mb-3" role="alert">
+      <p-message severity="error" [text]="error" />
+      <button pButton type="button" label="Повторить" icon="pi pi-refresh" class="p-button-text p-button-sm" (click)="load(true)"></button>
+    </div>
+
+    <p-card *ngIf="section!=='messages'" styleClass="section-card shadow-none">
+      <ng-template pTemplate="title">{{title}}</ng-template>
+
+      <div class="toolbar-row section-header mb-3">
+        <div class="select-row flex align-items-center gap-2">
+          <p-checkbox #selectAllCheckbox inputId="selectAll" [binary]="true" [ngModel]="allSelected || partiallySelected"
+                      [checkboxIcon]="partiallySelected ? 'pi pi-minus' : 'pi pi-check'"
+                      [ariaLabel]="partiallySelected ? 'Частично выбраны документы. Выбрать все' : 'Выбрать все документы для просмотра'"
+                      [disabled]="!hasExamination || loading || busy || !documents.length"
+                      (onChange)="toggleAll(partiallySelected || $event.checked); selectAllCheckbox.writeValue(allSelected || partiallySelected)" />
+          <label for="selectAll" class="cursor-pointer">Выбрать все документы для просмотра</label>
+        </div>
+
+        <div class="actions-row section-actions">
+          <button pButton type="button" icon="pi pi-eye" label="Посмотреть" class="p-button-secondary p-button-outlined"
+                  [disabled]="!hasExamination || !selected.size || busy || loading" (click)="preview()"></button>
+          <button pButton type="button" icon="pi pi-download" label="Скачать" class="p-button-secondary p-button-outlined"
+                  [disabled]="!hasExamination || !selected.size || busy || loading" (click)="download()"></button>
+          <button pButton type="button" icon="pi pi-th-large" class="p-button-secondary p-button-icon-only"
+                  [class.p-button-outlined]="viewMode!=='grid'" [attr.aria-pressed]="viewMode==='grid'"
+                  aria-label="Показать сеткой" (click)="viewMode='grid'"></button>
+          <button pButton type="button" icon="pi pi-bars" class="p-button-secondary p-button-icon-only"
+                  [class.p-button-outlined]="viewMode!=='list'" [attr.aria-pressed]="viewMode==='list'"
+                  aria-label="Показать списком" (click)="viewMode='list'"></button>
+        </div>
+      </div>
+
+      <div *ngIf="!loading" [ngClass]="viewMode==='grid' ? 'docs-grid doc-grid' : 'flex flex-column gap-3'">
+        <article *ngFor="let doc of documents" class="doc-card doc-item surface-card" role="button"
+                 [class.selected]="selected.has(doc.id)" [class.disabled]="!hasExamination || busy"
+                 [attr.aria-pressed]="selected.has(doc.id)" [attr.aria-disabled]="!hasExamination || busy"
+                 [attr.aria-labelledby]="'doc-title-'+doc.id" [attr.tabindex]="hasExamination && !busy ? 0 : -1"
+                 (click)="toggleCard(doc.id)" (keydown.enter)="$event.preventDefault(); toggleCard(doc.id)"
+                 (keydown.space)="$event.preventDefault(); toggleCard(doc.id)">
+          <div class="doc-card-head doc-item-header">
+            <div class="doc-title doc-item-title bg-transparent" [id]="'doc-title-'+doc.id">{{doc.title}}</div>
+          </div>
+          <div *ngIf="doc.generatedAt" class="doc-meta">
+            <i class="pi pi-calendar" aria-hidden="true"></i>
+            <span>{{doc.generatedAt | date:'dd.MM.yyyy HH:mm'}}</span>
+          </div>
+          <div *ngIf="doc.filename" class="doc-meta">
+            <i class="pi pi-file-pdf flex-shrink-0" aria-hidden="true"></i>
+            <span class="overflow-hidden text-overflow-ellipsis white-space-nowrap" [title]="doc.filename">{{doc.filename}}</span>
+          </div>
+          <div *ngIf="selected.has(doc.id)" class="selected-text doc-picked">
+            <i class="pi pi-check" aria-hidden="true"></i><span>Выбрано</span>
+          </div>
+        </article>
+      </div>
+      <div *ngIf="!loading && !error && !documents.length" class="p-5 text-center text-500" role="status">
+        {{section==='archive' && !hasExamination ? 'Выберите освидетельствование' : 'Документы отсутствуют'}}
+      </div>
+    </p-card>
+
+    <ng-container *ngIf="section==='messages' && !loading">
+      <p-table [value]="messages" [scrollable]="true" styleClass="docs-table p-datatable-sm" [paginator]="messageTotal>0"
+               [lazy]="true" [lazyLoadOnInit]="false" [first]="messageFirst" [rows]="messageRows" [totalRecords]="messageTotal"
+               [pageLinks]="6" [showFirstLastIcon]="false" paginatorStyleClass="justify-content-start px-0 py-3"
+               (onLazyLoad)="paginateMessages($event)" ariaLabel="СМС и извещения услугополучателю">
+        <ng-template pTemplate="header">
+          <tr>
+            <th scope="col" class="w-6rem white-space-nowrap">ID</th>
+            <th scope="col" class="w-12rem white-space-nowrap">Дата и время отправки</th>
+            <th scope="col" class="w-14rem white-space-nowrap">Вид сообщений/ извещение</th>
+            <th scope="col" class="white-space-nowrap">Текст сообщения</th>
+            <th scope="col" class="w-9rem white-space-nowrap">Статус запроса</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-message>
+          <tr>
+            <td class="py-3 white-space-nowrap">{{message.id}}</td>
+            <td class="py-3 white-space-nowrap">{{message.sentAt | date:'dd.MM.yyyy HH:mm:ss'}}</td>
+            <td class="py-3">{{message.type}}</td>
+            <td class="py-3 line-height-3">
+              <ng-container *ngFor="let line of (message.text || '').split('\n'); let last=last">{{line}}<br *ngIf="!last" /></ng-container>
+            </td>
+            <td class="py-3">
+              <span class="inline-block text-xs text-white border-round px-2 py-1 white-space-nowrap"
+                    [ngClass]="message.status==='ERROR' ? 'bg-red-500' : message.status==='PENDING' ? 'bg-yellow-600' : 'bg-blue-400'">
+                {{message.status==='ERROR' ? 'Ошибка' : message.status==='PENDING' ? 'В очереди' : message.progress+'%'}}
+              </span>
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="emptymessage"><tr><td colspan="5" class="p-5 text-center text-500">{{hasExamination ? 'Сообщения отсутствуют' : 'Выберите освидетельствование'}}</td></tr></ng-template>
+      </p-table>
+    </ng-container>
+
+    <div *ngIf="loading || busy" class="flex align-items-center justify-content-center gap-3 p-4 text-500" role="status" aria-live="polite">
+      <p-progressSpinner styleClass="w-2rem h-2rem" strokeWidth="4" />{{loading ? 'Загрузка данных…' : 'Подготовка документа…'}}
+    </div>
+  </section>
+</div>
+
+<p-dialog header="Просмотр документов" [(visible)]="dialogVisible" [modal]="true" [maximizable]="true"
+          [draggable]="false" [resizable]="false" styleClass="w-11 md:w-10" (onHide)="closePdf()">
+  <div *ngIf="selectedFiles.length" class="pdf-toolbar gap-2">
+    <button pButton type="button" icon="pi pi-angle-left" class="p-button-secondary p-button-outlined flex-shrink-0"
+            aria-label="Предыдущий документ" [disabled]="currentPdfIndex===0" (click)="prevPdf()"></button>
+    <div class="pdf-title min-w-0" aria-live="polite">
+      {{currentPdf?.title}}
+      <span class="pdf-counter">{{currentPdfIndex+1}} / {{selectedFiles.length}}</span>
+    </div>
+    <button pButton type="button" icon="pi pi-angle-right" class="p-button-secondary p-button-outlined flex-shrink-0"
+            aria-label="Следующий документ" [disabled]="currentPdfIndex===selectedFiles.length-1" (click)="nextPdf()"></button>
+  </div>
+  <div *ngIf="loadingPdf" class="pdf-loading flex align-items-center justify-content-center gap-3 p-4 text-500" role="status" aria-live="polite">
+    <p-progressSpinner styleClass="w-2rem h-2rem" strokeWidth="4" />Загрузка PDF…
+  </div>
+  <div *ngIf="pdfError" class="flex flex-wrap align-items-center gap-2 py-3" role="alert">
+    <p-message severity="error" [text]="pdfError" />
+    <button pButton type="button" label="Повторить загрузку PDF" icon="pi pi-refresh" class="p-button-text" (click)="loadSelectedPdf()"></button>
+  </div>
+  <iframe
+    *ngIf="pdfUrl && !loadingPdf"
+    [src]="pdfUrl"
+    title="Просмотр PDF"
+    width="100%"
+    height="700"
+    style="border: none">
+  </iframe>
+</p-dialog>
